@@ -86,13 +86,26 @@ jobs:
           [[ -d "files" ]] && mv -f files openwrt/files
           [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
           
-          # 强制锁定 MT5000 设备并设置分区 (7.4GB 预留安全余量)
+          # =======================================================
+          # 第一步：清理掉原配置中可能存在的其他架构设置 (核心修正)
+          # =======================================================
+          sed -i 's/CONFIG_TARGET_armsr=y/# CONFIG_TARGET_armsr is not set/' openwrt/.config
+          sed -i 's/CONFIG_TARGET_mediatek/# CONFIG_TARGET_mediatek/g' openwrt/.config
+          sed -i '/CONFIG_TARGET_ROOTFS_PARTSIZE/d' openwrt/.config
+          sed -i '/CONFIG_TARGET_KERNEL_PARTSIZE/d' openwrt/.config
+
+          # =======================================================
+          # 第二步：强行注入 MT5000 硬件目标和 8G 分区
+          # =======================================================
           echo "CONFIG_TARGET_mediatek=y" >> openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic=y" >> openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" >> openwrt/.config
+          
+          # 设置分区大小
           echo "CONFIG_TARGET_KERNEL_PARTSIZE=64" >> openwrt/.config
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=7600" >> openwrt/.config
           
+          # 执行 DIY 脚本
           [[ -f "${DIY_P2_SH}" ]] && chmod +x ${DIY_P2_SH} && cd openwrt/ && ${GITHUB_WORKSPACE}/${DIY_P2_SH} || true
 
       - name: 下载依赖包
