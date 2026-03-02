@@ -75,9 +75,25 @@ jobs:
           ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
+      - name: 深度缓存 (dl, ccache, feeds, tools)
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+            openwrt/feeds
+            openwrt/staging_dir/host
+            openwrt/staging_dir/toolchain
+          # 增加 feeds 文件的 hash 作为 key 的一部分，确保 feeds 更新时缓存失效
+          key: ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-${{ hashFiles('**/feeds.conf.default', '**/config') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-
+            ${{ runner.os }}-
+
       - name: 更新并安装 Feeds
         run: |
           cd openwrt/
+          # 只有当 feeds 目录为空或者缓存未完全恢复时才执行更新
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -85,14 +101,6 @@ jobs:
         run: |
           [[ -d "files" ]] && mv -f files openwrt/files
           [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
-          
-          # =======================================================
-          # 第一步：清理掉原配置中可能存在的其他架构设置 (核心修正)
-          # =======================================================
-          sed -i 's/CONFIG_TARGET_armsr=y/# CONFIG_TARGET_armsr is not set/' openwrt/.config
-          sed -i 's/CONFIG_TARGET_mediatek/# CONFIG_TARGET_mediatek/g' openwrt/.config
-          sed -i '/CONFIG_TARGET_ROOTFS_PARTSIZE/d' openwrt/.config
-          sed -i '/CONFIG_TARGET_KERNEL_PARTSIZE/d' openwrt/.config
 
           # =======================================================
           # 第二步：强行注入 MT5000 硬件目标和 8G 分区
