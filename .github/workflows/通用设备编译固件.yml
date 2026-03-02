@@ -19,7 +19,8 @@ on:
           - lede-master
           - immortalwrt-master
           - Lienol-master
-      
+          - aqr-k-MT5000
+
 env:
   FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
   CONFIG_FILE: config/${{ inputs.source_branch }}/config
@@ -68,6 +69,10 @@ jobs:
           if [[ "${{ inputs.source_branch }}" == *"openwrt"* ]]; then
               REPO_URL="https://github.com/openwrt/openwrt"
               REPO_BRANCH="main"
+              TAGS_NAME="official"
+          elif [[ "${{ inputs.source_branch }}" == *"aqr-k"* ]]; then
+              REPO_URL="https://github.com/aqr-k/openwrt"
+              REPO_BRANCH="MT5000"
               TAGS_NAME="official"
           elif [[ "${{ inputs.source_branch }}" == *"lede"* ]]; then
               REPO_URL="https://github.com/coolsnowwolf/lede"
