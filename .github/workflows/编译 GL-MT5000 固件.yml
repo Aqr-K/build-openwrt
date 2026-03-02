@@ -1,5 +1,5 @@
 #============================================================================================
-# Description: Build OpenWrt for GL-MT5000 (With Artifact Cache)
+# Description: Build OpenWrt for GL-MT5000
 #============================================================================================
 
 name: 编译 GL-MT5000 固件
@@ -30,7 +30,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    if: ${{ github.event.repository.owner.id }} == ${{ github.event.sender.id }}
+    if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
       - name: 检查项目分支
@@ -41,13 +41,12 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          (docker images -q | xargs -r docker rmi) || true
-          sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android 2>/dev/null
+          # 只删除最占空间的目录，不再执行极慢的 apt-get purge
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/local/share/boost 2>/dev/null
           sudo -E apt-get -y update
-          sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo -E apt-get -y install $(curl -fsSL https://is.gd/depend_ubuntu2204_openwrt)
-          sudo -E systemctl daemon-reload
-          sudo -E apt-get clean
+          # 安装编译依赖和 ccache
+          sudo -E apt-get -qq -y install $(curl -fsSL https://is.gd/depend_ubuntu2204_openwrt) ccache
+          sudo -E apt-get -qq clean
           sudo mkdir -p /workdir
           sudo chown ${USER}:${GROUPS} /workdir
           sudo timedatectl set-timezone "${TZ}"
@@ -56,7 +55,6 @@ jobs:
       - name: 克隆源码 [ ${{ inputs.source_branch }} ]
         id: codes
         working-directory: /workdir
-        if: steps.init.outputs.status == 'success' && !cancelled()
         run: |
           if [[ "${{ inputs.source_branch }}" == *"aqr-k"* ]]; then
               REPO_URL="https://github.com/aqr-k/openwrt"
@@ -67,15 +65,12 @@ jobs:
           elif [[ "${{ inputs.source_branch }}" == *"immortalwrt"* ]]; then
               REPO_URL="https://github.com/immortalwrt/immortalwrt"
               REPO_BRANCH="master"
-          else
-              echo "Unknown source code repository."
-              exit 1
           fi
           git clone -q --single-branch --depth=1 --branch=${REPO_BRANCH} ${REPO_URL} openwrt
           ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: 深度缓存 (dl, ccache, feeds, tools)
+      - name: 深度缓存管理 (dl, ccache, feeds, tools)
         uses: actions/cache@v4
         with:
           path: |
@@ -84,8 +79,9 @@ jobs:
             openwrt/feeds
             openwrt/staging_dir/host
             openwrt/staging_dir/toolchain
-          # 增加 feeds 文件的 hash 作为 key 的一部分，确保 feeds 更新时缓存失效
-          key: ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-${{ hashFiles('**/feeds.conf.default', '**/config') }}
+          # Key 包含分支名和配置文件的 Hash。配置变动时，会自动创建新缓存。
+          key: ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-${{ hashFiles('**/config', '**/feeds.conf.default') }}
+          # 允许从旧缓存恢复，提高命中率
           restore-keys: |
             ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-
             ${{ runner.os }}-
@@ -93,59 +89,71 @@ jobs:
       - name: 更新并安装 Feeds
         run: |
           cd openwrt/
-          # 只有当 feeds 目录为空或者缓存未完全恢复时才执行更新
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 加载自定义配置与设置 MT5000 8G
+      - name: 加载自定义配置与开启 CCACHE
         run: |
           [[ -d "files" ]] && mv -f files openwrt/files
           [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
+          
+          # 1. 清理冲突配置
+          sed -i 's/CONFIG_TARGET_armsr=y/# CONFIG_TARGET_armsr is not set/' openwrt/.config
+          sed -i 's/CONFIG_TARGET_mediatek/# CONFIG_TARGET_mediatek/g' openwrt/.config
+          sed -i '/CONFIG_TARGET_ROOTFS_PARTSIZE/d' openwrt/.config
+          sed -i '/CONFIG_TARGET_KERNEL_PARTSIZE/d' openwrt/.config
 
-          # =======================================================
-          # 第二步：强行注入 MT5000 硬件目标和 8G 分区
-          # =======================================================
+          # 2. 注入 MT5000 硬件目标和 8G 分区 (约 7.4GB Overlay)
           echo "CONFIG_TARGET_mediatek=y" >> openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic=y" >> openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" >> openwrt/.config
-          
-          # 设置分区大小
           echo "CONFIG_TARGET_KERNEL_PARTSIZE=64" >> openwrt/.config
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=7600" >> openwrt/.config
+          
+          # 3. 开启 CCACHE 缓存支持
+          echo "CONFIG_CCACHE=y" >> openwrt/.config
           
           # 执行 DIY 脚本
           [[ -f "${DIY_P2_SH}" ]] && chmod +x ${DIY_P2_SH} && cd openwrt/ && ${GITHUB_WORKSPACE}/${DIY_P2_SH} || true
 
-      - name: 下载依赖包
+      - name: 下载依赖包 (Download)
         run: |
           cd openwrt/
           make defconfig
           make download -j8
+          # 核心优化：清理损坏的下载包 (小于 1kb 的文件)，防止其污染缓存
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
 
       - name: 编译 OpenWrt
         id: compile
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/openwrt/.ccache
         run: |
           cd openwrt/
+          # 使用全核心编译。ccache 会在后台自动接管。
           make -j$(($(nproc) + 1)) V=s || make -j1 V=s
           echo "status=success" >> ${GITHUB_OUTPUT}
+          # 显示 ccache 命中率统计
+          ccache -s
 
       - name: 提取固件
-        id: organize
+        id: organize  # 确保这个 ID 存在
         if: steps.compile.outputs.status == 'success' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          # 打印路径方便调试
-          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-          echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          echo "status=success" >> ${GITHUB_OUTPUT}
+          # 将路径和日期设置为输出 (Outputs)
+          echo "firmware_path=$PWD" >> $GITHUB_OUTPUT
+          echo "file_date=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 上传固件至 Artifacts (备份缓存)
+      - name: 上传固件至 Artifacts
         uses: actions/upload-artifact@v4
         if: steps.organize.outputs.status == 'success' && !cancelled()
         with:
-          name: OpenWrt_MT5000_Firmware_${{ env.FILE_DATE }}
-          path: ${{ env.FIRMWARE_PATH }}/*
+          name: OpenWrt_MT5000_Firmware_${{ steps.organize.outputs.file_date }}
+          path: ${{ steps.organize.outputs.firmware_path }}/*
           if-no-files-found: error
           retention-days: 7
 
@@ -165,11 +173,12 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body: |
             ### GL-MT5000 (Beryl AX) 专用固件
-            - 存储分区: 约 7.4GB Overlay
+            - 存储分区: 约 7.4GB Overlay (适合 8G eMMC)
             - 源码: ${{ inputs.source_branch }}
+            - 编译加速: 已启用深度缓存 (DL/CCACHE/STAGING)
             - 默认 IP: 192.168.1.1
             - 默认密码: password
-          files: ${{ env.FIRMWARE_PATH }}/*
+          files: ${{ steps.organize.outputs.firmware_path }}/*
 
       - name: 清理旧运行记录
         uses: Mattraks/delete-workflow-runs@v2
