@@ -92,10 +92,22 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 加载自定义配置与开启 CCACHE
+      - name: 加载自定义配置与设置 MT5000 8G
         run: |
+          # 确保进入工作目录
+          mkdir -p openwrt
+          
+          # 处理 files 目录
           [[ -d "files" ]] && mv -f files openwrt/files
-          [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
+          
+          # 检查自定义配置文件是否存在
+          if [ -f "${CONFIG_FILE}" ]; then
+              echo "已找到自定义配置文件: ${CONFIG_FILE}"
+              cp -f ${CONFIG_FILE} openwrt/.config
+          else
+              echo "警告: 未找到自定义配置文件 ${CONFIG_FILE}，将使用默认配置！"
+              exit 1
+          fi
           
           # 1. 清理冲突配置
           sed -i 's/CONFIG_TARGET_armsr=y/# CONFIG_TARGET_armsr is not set/' openwrt/.config
