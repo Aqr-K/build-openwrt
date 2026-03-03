@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       config_version:
-        description: "选择源码分支"
+        description: "选择配置目录"
         required: false
         default: "aqr-k-MT5000"
         type: choice
@@ -13,9 +13,9 @@ on:
           - aqr-k-MT5000
 
       source_branch:
-        description: "1. 选择源码分支 (决定 OpenWrt 内核/组件版本)"
+        description: "选择源码分支 (决定 OpenWrt 内核/组件版本)"
         required: true
-        default: "MT5000"
+        default: "MT5000-24.10"
         type: choice
         options:
           - MT5000-main
