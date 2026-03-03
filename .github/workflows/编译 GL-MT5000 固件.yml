@@ -4,13 +4,23 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      source_branch:
+      config_version:
         description: "选择源码分支"
         required: false
         default: "aqr-k-MT5000"
         type: choice
         options:
           - aqr-k-MT5000
+
+      source_branch:
+        description: "1. 选择源码分支 (决定 OpenWrt 内核/组件版本)"
+        required: true
+        default: "MT5000"
+        type: choice
+        options:
+          - MT5000-main
+          - MT5000-24.10
+          - MT5000-25.12
 
       ssh:
         description: '是否开启 SSH 远程调试'
@@ -22,10 +32,10 @@ env:
   REPO_URL: https://github.com/Aqr-K/openwrt
   REPO_BRANCH: MT5000-openwrt-24.10
   # 路径配置
-  FEEDS_CONF: config/${{ github.event.inputs.source_branch }}/feeds.conf.default
-  CONFIG_FILE: config/${{ github.event.inputs.source_branch }}/config
-  DIY_P1_SH: config/${{ github.event.inputs.source_branch }}/diy-part1.sh
-  DIY_P2_SH: config/${{ github.event.inputs.source_branch }}/diy-part2.sh
+  FEEDS_CONF: config/${{ github.event.inputs.config_version }}/feeds.conf.default
+  CONFIG_FILE: config/${{ github.event.inputs.config_version }}/config
+  DIY_P1_SH: config/${{ github.event.inputs.config_version }}/diy-part1.sh
+  DIY_P2_SH: config/${{ github.event.inputs.config_version }}/diy-part2.sh
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
@@ -204,7 +214,7 @@ jobs:
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         # name: OpenWrt_MT5000_${{ steps.organize.outputs.OWRT_VERSION }}_固件
-        name: OpenWrt_MT5000_固件_${{ github.event.inputs.source_branch }}
+        name: OpenWrt_${{ github.event.inputs.source_branch }}
         path: ${{ steps.organize.outputs.FIRMWARE_PATH }}
         retention-days: 7
 
