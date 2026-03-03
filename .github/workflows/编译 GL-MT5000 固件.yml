@@ -22,7 +22,7 @@ on:
 
 env:
   REPO_URL: https://github.com/Aqr-K/openwrt
-  REPO_BRANCH: MT5000
+  REPO_BRANCH: MT5000-openwrt-24.10
   # 路径配置
   FEEDS_CONF: config/${{ github.event.inputs.source_branch }}/feeds.conf.default
   CONFIG_FILE: config/${{ github.event.inputs.source_branch }}/config
