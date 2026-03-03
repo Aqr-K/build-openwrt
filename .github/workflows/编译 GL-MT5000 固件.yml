@@ -106,11 +106,16 @@ jobs:
       run: |
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         
-        # 强制注入 MT5000 硬件配置及你的需求包 (已过滤不兼容驱动)
         cat >> openwrt/.config <<EOF
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_filogic=y
         CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y
+        
+        # CONFIG_USE_APK is not set
+        CONFIG_PACKAGE_opkg=y
+        CONFIG_PACKAGE_libopkg=y
+        CONFIG_PACKAGE_luci-app-opkg=y
+
         CONFIG_CCACHE=y
         CONFIG_PACKAGE_autocore=y
         CONFIG_PACKAGE_bash=y
@@ -137,7 +142,7 @@ jobs:
         CONFIG_PACKAGE_luci-app-fan=y
         CONFIG_PACKAGE_luci-app-filemanager=y
         CONFIG_PACKAGE_luci-app-firewall=y
-        CONFIG_PACKAGE_luci-app-package-manager=y
+        CONFIG_PACKAGE_luci-app-opkg=y
         CONFIG_PACKAGE_luci-app-syscontrol=y
         CONFIG_PACKAGE_luci-app-upnp=y
         CONFIG_PACKAGE_luci-app-wizard=y
@@ -153,7 +158,7 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
         
-        # 自动化依赖补全（生成最终完整的编译清单）
+        # 此时 make defconfig 会根据上面的设置，将系统锁定在 ipk 模式
         make defconfig
 
     - name: SSH 远程调试 (tmate)
