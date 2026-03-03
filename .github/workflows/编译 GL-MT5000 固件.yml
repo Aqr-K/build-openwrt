@@ -11,8 +11,6 @@ on:
         type: choice
         options:
           - aqr-k-MT5000
-          - openwrt-main
-          - immortalwrt-master
 
       ssh:
         description: '是否开启 SSH 远程调试'
