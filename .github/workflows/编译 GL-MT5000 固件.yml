@@ -188,11 +188,16 @@ jobs:
       id: organize
       if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
+        # 优先级：.config里的定义 > include/version.mk > 默认为 SNAPSHOT
+        VERSION_V=$(grep "CONFIG_VERSION_NUMBER=" openwrt/.config | cut -d'=' -f2 | sed 's/"//g')
+        [ -z "$VERSION_V" ] && VERSION_V=$(grep "VERSION_NUMBER:=" openwrt/include/version.mk | cut -d'=' -f2)
+        [ -z "$VERSION_V" ] && VERSION_V="SNAPSHOT"
+        echo "OWRT_VERSION=$VERSION_V" >> $GITHUB_OUTPUT
+        
         mkdir -p $GITHUB_WORKSPACE/output
         cd openwrt/bin/targets/mediatek/filogic/
         cp -f *.bin $GITHUB_WORKSPACE/output/ || true
         cp -f *.tar.gz $GITHUB_WORKSPACE/output/ || true
-        # 将输出路径存入输出变量
         echo "FIRMWARE_PATH=$GITHUB_WORKSPACE/output" >> $GITHUB_OUTPUT
         echo "status=success" >> $GITHUB_OUTPUT
 
@@ -200,7 +205,7 @@ jobs:
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_MT5000_固件_${{ github.event.inputs.source_branch }}
+        name: OpenWrt_MT5000_${{ steps.organize.outputs.OWRT_VERSION }}_固件
         path: ${{ steps.organize.outputs.FIRMWARE_PATH }}
         retention-days: 7
 
@@ -220,10 +225,10 @@ jobs:
         files: ${{ steps.organize.outputs.FIRMWARE_PATH }}/*
         body: |
           ## GL-MT5000 (Beryl AX) 固件发布
+          - 📦 **OpenWrt 版本**: ${{ steps.organize.outputs.OWRT_VERSION }}
           - 📅 编译日期: ${{ steps.tag.outputs.release_date }}
           - 📂 配置目录: config/${{ github.event.inputs.source_branch }}
           - 🔗 源码分支: ${{ env.REPO_BRANCH }}
-          - 🛠️ 说明: 固件已集成你要求的 WebUI 插件及基础驱动。
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
