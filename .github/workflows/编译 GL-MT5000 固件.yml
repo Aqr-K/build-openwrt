@@ -32,7 +32,7 @@ env:
   REPO_URL: https://github.com/Aqr-K/openwrt
   REPO_BRANCH: ${{ github.event.inputs.source_branch }}
   # 路径配置
-  FEEDS_CONF: config/${{ github.event.inputs.config_version }}/feeds.conf.default
+  FEEDS_CONF: config/${{ github.event.inputs.config_version }}/feeds.conf
   CONFIG_FILE: config/${{ github.event.inputs.config_version }}/config
   DIY_P1_SH: config/${{ github.event.inputs.config_version }}/diy-part1.sh
   DIY_P2_SH: config/${{ github.event.inputs.config_version }}/diy-part2.sh
