@@ -158,6 +158,7 @@ jobs:
 
     - name: SSH 远程调试 (tmate)
       uses: mxschmitt/action-tmate@v3
+      continue-on-error: true
       if: (github.event.inputs.ssh == 'true')
       with:
         limit-access-to-actor: true
