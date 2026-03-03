@@ -30,7 +30,7 @@ on:
 
 env:
   REPO_URL: https://github.com/Aqr-K/openwrt
-  REPO_BRANCH: MT5000-openwrt-24.10
+  REPO_BRANCH: ${{ github.event.inputs.source_branch }}
   # 路径配置
   FEEDS_CONF: config/${{ github.event.inputs.config_version }}/feeds.conf.default
   CONFIG_FILE: config/${{ github.event.inputs.config_version }}/config
@@ -235,7 +235,7 @@ jobs:
         body: |
           ## GL-MT5000 (Beryl AX) 固件发布
           - 📅 编译日期: ${{ steps.tag.outputs.release_date }}
-          - 📂 配置目录: config/${{ github.event.inputs.source_branch }}
+          - 📂 配置目录: config/${{ github.event.inputs.config_version }}
           - 🔗 源码分支: ${{ env.REPO_BRANCH }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
