@@ -168,6 +168,13 @@ jobs:
         
         # 此时 make defconfig 会根据上面的设置，将系统锁定在 ipk 模式
         make defconfig
+        
+    - name: 打印最终有效 .config 配置
+      run: |
+        echo "================== 最终有效配置清单 =================="
+        # 过滤掉注释行和空行，只显示生效的选项
+        grep -v '^#' openwrt/.config | grep -v '^$'
+        echo "===================================================="
 
     - name: SSH 远程调试 (tmate)
       uses: mxschmitt/action-tmate@v3
