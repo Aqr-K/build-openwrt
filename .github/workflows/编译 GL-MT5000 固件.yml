@@ -1,7 +1,3 @@
-#============================================================================================
-# Description: Build OpenWrt for GL-MT5000
-#============================================================================================
-
 name: 编译 GL-MT5000 固件
 
 on:
@@ -18,183 +14,216 @@ on:
           - openwrt-main
           - immortalwrt-master
 
+      ssh:
+        description: '是否开启 SSH 远程调试'
+        required: false
+        type: boolean
+        default: false
+
 env:
-  FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
-  CONFIG_FILE: config/${{ inputs.source_branch }}/config
-  DIY_P1_SH: config/${{ inputs.source_branch }}/diy-part1.sh
-  DIY_P2_SH: config/${{ inputs.source_branch }}/diy-part2.sh
-  UPLOAD_FIRMWARE: true
+  REPO_URL: https://github.com/Aqr-K/openwrt
+  REPO_BRANCH: MT5000
+  # 路径配置
+  FEEDS_CONF: config/${{ github.event.inputs.source_branch }}/feeds.conf.default
+  CONFIG_FILE: config/${{ github.event.inputs.source_branch }}/config
+  DIY_P1_SH: config/${{ github.event.inputs.source_branch }}/diy-part1.sh
+  DIY_P2_SH: config/${{ github.event.inputs.source_branch }}/diy-part2.sh
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
   build:
+    name: 开始编译固件
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-      - name: 检查项目分支
-        uses: actions/checkout@main
+    - name: 检出当前仓库
+      uses: actions/checkout@v4
 
-      - name: 初始化编译环境
-        id: init
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # 只删除最占空间的目录，不再执行极慢的 apt-get purge
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/local/share/boost 2>/dev/null
-          sudo -E apt-get -y update
-          # 安装编译依赖和 ccache
-          sudo -E apt-get -qq -y install $(curl -fsSL https://is.gd/depend_ubuntu2204_openwrt) ccache
-          sudo -E apt-get -qq clean
-          sudo mkdir -p /workdir
-          sudo chown ${USER}:${GROUPS} /workdir
-          sudo timedatectl set-timezone "${TZ}"
-          echo "status=success" >> ${GITHUB_OUTPUT}
+    - name: 初始化编译环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
 
-      - name: 克隆源码 [ ${{ inputs.source_branch }} ]
-        id: codes
-        working-directory: /workdir
-        run: |
-          if [[ "${{ inputs.source_branch }}" == *"aqr-k"* ]]; then
-              REPO_URL="https://github.com/aqr-k/openwrt"
-              REPO_BRANCH="MT5000"
-          elif [[ "${{ inputs.source_branch }}" == *"openwrt"* ]]; then
-              REPO_URL="https://github.com/openwrt/openwrt"
-              REPO_BRANCH="main"
-          elif [[ "${{ inputs.source_branch }}" == *"immortalwrt"* ]]; then
-              REPO_URL="https://github.com/immortalwrt/immortalwrt"
-              REPO_BRANCH="master"
-          fi
-          git clone -q --single-branch --depth=1 --branch=${REPO_BRANCH} ${REPO_URL} openwrt
-          ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
-          echo "status=success" >> ${GITHUB_OUTPUT}
+    - name: 克隆 OpenWrt 源码
+      working-directory: /workdir
+      run: |
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 深度缓存管理 (dl, ccache, feeds, tools)
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/dl
-            openwrt/.ccache
-            openwrt/feeds
-            openwrt/staging_dir/host
-            openwrt/staging_dir/toolchain
-          # Key 包含分支名和配置文件的 Hash。配置变动时，会自动创建新缓存。
-          key: ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-${{ hashFiles('**/config', '**/feeds.conf.default') }}
-          # 允许从旧缓存恢复，提高命中率
-          restore-keys: |
-            ${{ runner.os }}-${{ inputs.source_branch }}-deep-cache-
-            ${{ runner.os }}-
+    - name: 显示 OpenWrt 版本信息
+      run: |
+        cd openwrt
+        echo "==============================="
+        echo "当前源码版本信息："
+        if [ -f include/version.mk ]; then
+          grep "VERSION_NUMBER:=" include/version.mk | sed 's/VERSION_NUMBER:=/版本号: /'
+          grep "VERSION_DIST:=" include/version.mk | sed 's/VERSION_DIST:=/固件名: /'
+        fi
+        if [ -f package/base-files/files/etc/openwrt_release ]; then
+          cat package/base-files/files/etc/openwrt_release
+        fi
+        echo "==============================="
 
-      - name: 更新并安装 Feeds
-        run: |
-          cd openwrt/
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+    - name: 缓存下载目录 (dl)
+      uses: actions/cache@v4
+      with:
+        path: openwrt/dl
+        key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
 
-      - name: 加载自定义配置与设置 MT5000 8G
-        run: |
-          # 确保进入工作目录
-          mkdir -p openwrt
-          
-          # 处理 files 目录
-          [[ -d "files" ]] && mv -f files openwrt/files
-          
-          # 检查自定义配置文件是否存在
-          if [ -f "${CONFIG_FILE}" ]; then
-              echo "已找到自定义配置文件: ${CONFIG_FILE}"
-              cp -f ${CONFIG_FILE} openwrt/.config
-          else
-              echo "警告: 未找到自定义配置文件 ${CONFIG_FILE}，将使用默认配置！"
-              exit 1
-          fi
-          
-          # 1. 清理冲突配置
-          sed -i 's/CONFIG_TARGET_armsr=y/# CONFIG_TARGET_armsr is not set/' openwrt/.config
-          sed -i 's/CONFIG_TARGET_mediatek/# CONFIG_TARGET_mediatek/g' openwrt/.config
-          sed -i '/CONFIG_TARGET_ROOTFS_PARTSIZE/d' openwrt/.config
-          sed -i '/CONFIG_TARGET_KERNEL_PARTSIZE/d' openwrt/.config
+    - name: 缓存编译器缓存 (ccache)
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
-          # 2. 注入 MT5000 硬件目标和 8G 分区 (约 7.4GB Overlay)
-          echo "CONFIG_TARGET_mediatek=y" >> openwrt/.config
-          echo "CONFIG_TARGET_mediatek_filogic=y" >> openwrt/.config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" >> openwrt/.config
-          echo "CONFIG_TARGET_KERNEL_PARTSIZE=64" >> openwrt/.config
-          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=7600" >> openwrt/.config
-          
-          # 3. 开启 CCACHE 缓存支持
-          echo "CONFIG_CCACHE=y" >> openwrt/.config
-          
-          # 执行 DIY 脚本
-          [[ -f "${DIY_P2_SH}" ]] && chmod +x ${DIY_P2_SH} && cd openwrt/ && ${GITHUB_WORKSPACE}/${DIY_P2_SH} || true
+    - name: 加载自定义 Feeds & 执行 DIY 脚本 (Part 1)
+      run: |
+        [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
-      - name: 下载依赖包 (Download)
-        run: |
-          cd openwrt/
-          make defconfig
-          make download -j8
-          # 核心优化：清理损坏的下载包 (小于 1kb 的文件)，防止其污染缓存
-          find dl -size -1024c -exec ls -l {} \;
-          find dl -size -1024c -exec rm -f {} \;
+    - name: 更新并安装 Feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
-      - name: 编译 OpenWrt
-        id: compile
-        env:
-          CCACHE_DIR: ${{ github.workspace }}/openwrt/.ccache
-        run: |
-          cd openwrt/
-          # 使用全核心编译。ccache 会在后台自动接管。
-          make -j$(($(nproc) + 1)) V=s || make -j1 V=s
-          echo "status=success" >> ${GITHUB_OUTPUT}
-          # 显示 ccache 命中率统计
-          ccache -s
+    - name: 加载自定义配置 & 注入预装包 (Part 2)
+      run: |
+        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
+        
+        # 强制注入 MT5000 硬件配置及你的需求包 (已过滤不兼容驱动)
+        cat >> openwrt/.config <<EOF
+        CONFIG_TARGET_mediatek=y
+        CONFIG_TARGET_mediatek_filogic=y
+        CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y
+        CONFIG_CCACHE=y
+        CONFIG_PACKAGE_autocore=y
+        CONFIG_PACKAGE_bash=y
+        CONFIG_PACKAGE_block-mount=y
+        CONFIG_PACKAGE_ca-bundle=y
+        CONFIG_PACKAGE_coremark=y
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_dnsmasq-full=y
+        CONFIG_PACKAGE_ds-lite=y
+        CONFIG_PACKAGE_e2fsprogs=y
+        CONFIG_PACKAGE_fdisk=y
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_fstools=y
+        CONFIG_PACKAGE_htop=y
+        CONFIG_PACKAGE_kmod-button-hotplug=y
+        CONFIG_PACKAGE_kmod-fs-f2fs=y
+        CONFIG_PACKAGE_kmod-fs-vfat=y
+        CONFIG_PACKAGE_kmod-lib-zstd=y
+        CONFIG_PACKAGE_kmod-mmc=y
+        CONFIG_PACKAGE_kmod-sdhci=y
+        CONFIG_PACKAGE_kmod-tcp-bbr=y
+        CONFIG_PACKAGE_kmod-usb-hid=y
+        CONFIG_PACKAGE_luci-app-advancedplus=y
+        CONFIG_PACKAGE_luci-app-fan=y
+        CONFIG_PACKAGE_luci-app-filemanager=y
+        CONFIG_PACKAGE_luci-app-firewall=y
+        CONFIG_PACKAGE_luci-app-package-manager=y
+        CONFIG_PACKAGE_luci-app-syscontrol=y
+        CONFIG_PACKAGE_luci-app-upnp=y
+        CONFIG_PACKAGE_luci-app-wizard=y
+        CONFIG_PACKAGE_luci-proto-wireguard=y
+        CONFIG_PACKAGE_mkf2fs=y
+        CONFIG_PACKAGE_pciutils=y
+        CONFIG_PACKAGE_usbutils=y
+        CONFIG_PACKAGE_wget-ssl=y
+        CONFIG_PACKAGE_zram-swap=y
+        EOF
+        
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+        
+        # 自动化依赖补全（生成最终完整的编译清单）
+        make defconfig
 
-      - name: 提取固件
-        id: organize  # 确保这个 ID 存在
-        if: steps.compile.outputs.status == 'success' && !cancelled()
-        run: |
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          # 将路径和日期设置为输出 (Outputs)
-          echo "firmware_path=$PWD" >> $GITHUB_OUTPUT
-          echo "file_date=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
-          echo "status=success" >> $GITHUB_OUTPUT
+    - name: SSH 远程调试 (tmate)
+      uses: mxschmitt/action-tmate@v3
+      if: (github.event.inputs.ssh == 'true')
+      with:
+        limit-access-to-actor: true
 
-      - name: 上传固件至 Artifacts
-        uses: actions/upload-artifact@v4
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        with:
-          name: OpenWrt_MT5000_Firmware_${{ steps.organize.outputs.file_date }}
-          path: ${{ steps.organize.outputs.firmware_path }}/*
-          if-no-files-found: error
-          retention-days: 7
+    - name: 下载软件包源码 (Download)
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
 
-      - name: 生成 Release 标签
-        id: tag
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        run: |
-          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> ${GITHUB_OUTPUT}
-          echo "status=success" >> ${GITHUB_OUTPUT}
+    - name: 执行固件编译
+      id: compile
+      run: |
+        cd openwrt
+        ccache -M 5G
+        echo -e "$(nproc) 线程编译中..."
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 上传固件至 Release
-        uses: softprops/action-gh-release@v1
-        if: steps.tag.outputs.status == 'success' && !cancelled()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body: |
-            ### GL-MT5000 (Beryl AX) 专用固件
-            - 存储分区: 约 7.4GB Overlay (适合 8G eMMC)
-            - 源码: ${{ inputs.source_branch }}
-            - 编译加速: 已启用深度缓存 (DL/CCACHE/STAGING)
-            - 默认 IP: 192.168.1.1
-            - 默认密码: password
-          files: ${{ steps.organize.outputs.firmware_path }}/*
+    - name: 整理输出文件
+      id: organize
+      if: steps.compile.outputs.status == 'success' && !cancelled()
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/output
+        cd openwrt/bin/targets/mediatek/filogic/
+        cp -f *.bin $GITHUB_WORKSPACE/output/ || true
+        cp -f *.tar.gz $GITHUB_WORKSPACE/output/ || true
+        # 将输出路径存入输出变量
+        echo "FIRMWARE_PATH=$GITHUB_WORKSPACE/output" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 清理旧运行记录
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          retain_days: 1
-          keep_minimum_runs: 3
-          token: ${{ secrets.GITHUB_TOKEN }}
+    - name: 上传固件至工作流附件 (Artifacts)
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_MT5000_固件_${{ github.event.inputs.source_branch }}
+        path: ${{ steps.organize.outputs.FIRMWARE_PATH }}
+        retention-days: 7
+
+    - name: 生成发布标签 (Release Tag)
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && steps.organize.outputs.status == 'success' && !cancelled()
+      run: |
+        echo "release_tag=MT5000-$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_date=$(date +"%Y.%m.%d")" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 发布至 GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        files: ${{ steps.organize.outputs.FIRMWARE_PATH }}/*
+        body: |
+          ## GL-MT5000 (Beryl AX) 固件发布
+          - 📅 编译日期: ${{ steps.tag.outputs.release_date }}
+          - 📂 配置目录: config/${{ github.event.inputs.source_branch }}
+          - 🔗 源码分支: ${{ env.REPO_BRANCH }}
+          - 🛠️ 说明: 固件已集成你要求的 WebUI 插件及基础驱动。
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 清理旧运行记录
+      uses: Mattraks/delete-workflow-runs@v2
+      with:
+        retain_days: 1
+        keep_minimum_runs: 3
+        token: ${{ secrets.GITHUB_TOKEN }}
