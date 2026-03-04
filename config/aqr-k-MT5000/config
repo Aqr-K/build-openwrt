@@ -17,20 +17,10 @@ CONFIG_PACKAGE_trusted-firmware-a-mt7988-ram-ddr3=y
 CONFIG_PACKAGE_trusted-firmware-a-mt7988-ram-ddr4=y
 
 # ==========================================
-# 无线核心驱动
-# ==========================================
-CONFIG_PACKAGE_kmod-mt76=y
-CONFIG_PACKAGE_kmod-mt76-connac=y
-CONFIG_PACKAGE_kmod-mt76-core=y
-
-# ==========================================
 # MT5000 (MT7981) 专用驱动
 # ==========================================
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_mt7981-wo-firmware=y
-
-# 无线管理工具 (没有这个 Web 界面不会显示无线菜单)
-CONFIG_PACKAGE_wpad-openssl=y
 
 # ==========================================
 # 分区扩容设置 (针对 8GB EMMC)
@@ -78,12 +68,10 @@ CONFIG_PACKAGE_luci-app-argon-config=y
 # ==========================================
 # 实用功能插件 (精选常用)
 # ==========================================
-# 1. 基础工具
 CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_luci-app-wol=y
 CONFIG_PACKAGE_luci-app-ddns=y
-CONFIG_PACKAGE_luci-app-ddns-go=y
 CONFIG_PACKAGE_luci-app-firewall=y
 CONFIG_PACKAGE_luci-app-opkg=y
 CONFIG_PACKAGE_luci-app-netdata=y
