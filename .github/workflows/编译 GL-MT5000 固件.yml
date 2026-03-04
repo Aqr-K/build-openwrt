@@ -92,15 +92,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
-    - name: 恢复工具链与主机工具 (提速核心)
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          /workdir/openwrt/staging_dir/toolchain-*
-          /workdir/openwrt/staging_dir/host
-        key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles('**/toolchain/gcc/Makefile') }}
-        restore-keys: |
-          ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-
     # ======================================================
 
     # ==================== 进入构建阶段 ====================
@@ -192,14 +183,6 @@ jobs:
         # 每次保存使用含 ID 的 Key，确保能存入
         key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-    - name: 总是保存工具链产物 (无论是否成功)
-      uses: actions/cache/save@v4
-      if: github.event.inputs.debug == 'false' && always()
-      with:
-        path: |
-          /workdir/openwrt/staging_dir/toolchain-*
-          /workdir/openwrt/staging_dir/host
-        key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ github.run_id }}
     # ================================================================
 
     - name: 整理输出文件
