@@ -76,10 +76,10 @@ jobs:
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     # ==================== 恢复缓存阶段 ====================
-    - name: 恢复下载目录 (dl)
-       uses: actions/cache/restore@v4
+    - name: 恢复下载目录缓存 (dl)
+      uses: actions/cache/restore@v4
       with:
-        path: /workdir/openwrt/dl
+        path: openwrt/dl
         key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
         restore-keys: |
           ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
@@ -92,23 +92,26 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
+    - name: 恢复工具链缓存 (staging_dir)
+      id: cache-toolchain
+      uses: actions/cache/restore@v4
+      with:
+        path: openwrt/staging_dir
+        key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}
+
     # ======================================================
 
-    # ==================== 进入构建阶段 ====================
+    # ==================== 构建准备阶段 =====================
     - name: 加载自定义 Feeds & 执行 DIY 脚本 (Part 1)
       run: |
         [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    - name: 更新并安装 Feeds
-      run: |
-        cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 加载自定义配置 (Part 2)
+    - name: 加载自定义配置 (Part 2) & 生成配置
       run: |
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config 
         chmod +x $DIY_P2_SH
@@ -116,13 +119,6 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P2_SH
         sed -i 's/CONFIG_CCACHE=y/CONFIG_CCACHE=y/' .config || echo "CONFIG_CCACHE=y" >> .config
         make defconfig
-        
-    - name: 打印最终有效 .config 配置
-      run: |
-        echo "================== 最终有效配置清单 =================="
-        # 过滤掉注释行和空行，只显示生效的选项
-        grep -v '^#' openwrt/.config | grep -v '^$'
-        echo "===================================================="
 
     - name: SSH 远程调试 (tmate)
       uses: mxschmitt/action-tmate@v3
@@ -131,13 +127,6 @@ jobs:
       with:
         limit-access-to-actor: true
 
-    - name: 上传调试用 .config 文件
-      if: (github.event.inputs.debug == 'false')
-      uses: actions/upload-artifact@v4
-      with:
-        name: config-debug-${{ github.event.inputs.source_branch }}
-        path: openwrt/.config
-
     - name: 下载软件包源码 (Download)
       if: (github.event.inputs.debug == 'false')
       run: |
@@ -145,46 +134,92 @@ jobs:
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+    # ======================================================
 
-    - name: 执行固件编译
-      id: compile
+     # ==================== 拆分编译阶段 ====================
+    - name: 编译配置 ccache 环境变量
       if: (github.event.inputs.debug == 'false')
-      env:
-        # 让 ccache 忽略路径差异，大幅提升命中率
-        CCACHE_DIR: /home/runner/.ccache
-        CCACHE_BASEDIR: /workdir/openwrt
-        CCACHE_COMPRESS: "true"
-        CCACHE_COMPRESSLEVEL: "6"
+      run: |
+        echo "CCACHE_DIR=/home/runner/.ccache" >> $GITHUB_ENV
+        echo "CCACHE_BASEDIR=/workdir/openwrt" >> $GITHUB_ENV
+        echo "CCACHE_COMPRESS=true" >> $GITHUB_ENV
+        echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+        ccache -M 2G
+        ccache -z
+
+    - name: 阶段 0 - 初始化编译环境 (Prepare)
+      if: (github.event.inputs.debug == 'false')
       run: |
         cd openwrt
-        ccache -M 2G
-        ccache -z # 清除之前的统计，以便观察本次编译
-        # 先将编译流程排个序
+        echo "正在初始化编译树目录结构..."
         make -j1 prepare
-        echo -e "$(nproc) 线程编译中..."
-        make -j$(nproc) || make -j1 || make -j1 V=s
+
+    - name: 阶段 1 - 编译宿主机工具 (Tools)
+      if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false'
+      run: |
+        cd openwrt
+        echo "正在构建 Tools..."
+        make tools/install -j$(nproc) || make tools/install -j1 V=s
+
+    - name: 阶段 2 - 编译交叉工具链 (Toolchain)
+      if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false'
+      run: |
+        cd openwrt
+        echo "正在构建 Toolchain..."
+        make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+
+    - name: 阶段 3 - 编译内核及驱动 (Target)
+      if: (github.event.inputs.debug == 'false')
+      run: |
+        cd openwrt
+        echo "正在构建 Target (Kernel)..."
+        make target/compile -j$(nproc) || make target/compile -j1 V=s
+
+    - name: 阶段 4 - 编译各类插件及依赖 (Package)
+      if: (github.event.inputs.debug == 'false')
+      run: |
+        cd openwrt
+        echo "正在构建 Packages..."
+        # IGNORE_ERRORS 参数可防止非致命插件错误中断整体流程
+        make package/compile -j$(nproc) IGNORE_ERRORS=1 || make package/compile -j1 V=s
+
+    - name: 阶段 5 - 打包生成最终固件 (Install)
+      id: compile
+      if: (github.event.inputs.debug == 'false')
+      run: |
+        cd openwrt
+        echo "正在打包固件..."
+        make package/install -j$(nproc) || make package/install -j1 V=s
+        make target/install -j$(nproc) || make target/install -j1 V=s
+        make checksum
         echo "================== CCACHE 统计信息 =================="
         ccache -s
         echo "===================================================="
         echo "status=success" >> $GITHUB_OUTPUT
     # ======================================================
-
+    
     # ==================== 保存缓存阶段 ====================
-    - name: 总是保存下载目录 (dl)
+    - name: 保存下载目录缓存 (dl)
       uses: actions/cache/save@v4
       if: github.event.inputs.debug == 'false' && always()
       with:
-        path: /workdir/openwrt/dl
+        path: openwrt/dl
         key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
 
-    - name: 总是保存编译器缓存 (ccache)
+    - name: 保存编译器缓存 (ccache)
       uses: actions/cache/save@v4
       if: github.event.inputs.debug == 'false' && always()
       with:
         path: /home/runner/.ccache
-        # 每次保存使用含 ID 的 Key，确保能存入
         key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+    - name: 保存工具链缓存 (staging_dir)
+      uses: actions/cache/save@v4
+      # 只有在没有命中旧缓存，并且编译成功时，才需要执行保存操作
+      if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false' && always()
+      with:
+        path: openwrt/staging_dir
+        key: ${{ runner.os }}-openwrt-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}
     # ================================================================
 
     - name: 整理输出文件
@@ -198,7 +233,7 @@ jobs:
         echo "FIRMWARE_PATH=$GITHUB_WORKSPACE/output" >> $GITHUB_OUTPUT
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 上传固件至工作流附件 (Artifacts)
+    - name: 上传固件至工作流附件
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
@@ -233,5 +268,5 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         repository: ${{ github.repository }}
-        retain_days: 1         # 保留 1 天内的记录
-        keep_minimum_runs: 3   # 至少保留最近 3 次运行
+        retain_days: 1
+        keep_minimum_runs: 3
