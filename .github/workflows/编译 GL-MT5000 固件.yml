@@ -208,4 +208,13 @@ jobs:
       with:
         retain_days: 1
         keep_minimum_runs: 3
+        
+    - name: 总是保存编译器缓存 (ccache)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: /home/runner/.ccache
+        # 注意：Key 必须是唯一的，如果这次编译产生新缓存，Key 不能和 Restore 的完全一样（除非你删除了旧缓存）
+        # 建议在 Key 里带上 run_id 或 run_attempt
+        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
         token: ${{ secrets.GITHUB_TOKEN }}
