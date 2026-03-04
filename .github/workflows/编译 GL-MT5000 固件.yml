@@ -79,7 +79,7 @@ jobs:
     - name: 恢复下载目录缓存 (dl)
       uses: actions/cache/restore@v4
       with:
-        path: openwrt/dl
+        path: /workdir/openwrt/dl 
         key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
         restore-keys: |
           ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
@@ -92,13 +92,16 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
-    - name: 恢复工具链缓存 (staging_dir)
+    - name: 恢复工具链缓存 (Toolchain)
       id: cache-toolchain
       uses: actions/cache/restore@v4
       with:
-        path: openwrt/staging_dir
+        path: |
+          /workdir/openwrt/staging_dir/host*
+          /workdir/openwrt/staging_dir/toolchain-*
+          /workdir/openwrt/build_dir/host*
+          /workdir/openwrt/build_dir/toolchain-*
         key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}
-
     # ======================================================
 
     # ==================== 构建准备阶段 =====================
@@ -131,12 +134,12 @@ jobs:
       if: (github.event.inputs.debug == 'false')
       run: |
         cd openwrt
-        make download -j8
+        make download -j$(nproc)
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
     # ======================================================
 
-     # ==================== 拆分编译阶段 ====================
+    # ==================== 拆分编译阶段 =====================
     - name: 编译配置 ccache 环境变量
       if: (github.event.inputs.debug == 'false')
       run: |
@@ -198,17 +201,17 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
     # ======================================================
     
-    # ==================== 保存缓存阶段 ====================
+    # ==================== 保存缓存阶段 =====================
     - name: 保存下载目录缓存 (dl)
       uses: actions/cache/save@v4
-      if: github.event.inputs.debug == 'false' && always()
+      if: github.event.inputs.debug == 'false' && !cancelled()
       with:
         path: openwrt/dl
         key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
 
     - name: 保存编译器缓存 (ccache)
       uses: actions/cache/save@v4
-      if: github.event.inputs.debug == 'false' && always()
+      if: github.event.inputs.debug == 'false' && !cancelled()
       with:
         path: /home/runner/.ccache
         key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -216,7 +219,7 @@ jobs:
     - name: 保存工具链缓存 (staging_dir)
       uses: actions/cache/save@v4
       # 只有在没有命中旧缓存，并且编译成功时，才需要执行保存操作
-      if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false' && always()
+      if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false' && success()
       with:
         path: openwrt/staging_dir
         key: ${{ runner.os }}-openwrt-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}
