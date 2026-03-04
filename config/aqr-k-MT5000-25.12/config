@@ -1,20 +1,12 @@
 # ==========================================
-# 1. 核心硬件目标 (GL-MT5000 / Filogic 核心)
+# 1核心硬件目标 (GL-MT5000 / Filogic 核心)
 # ==========================================
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y
 
 # ==========================================
-# 2. 强制切换包管理器：从 APK 换回 OPKG (关键)
-# ==========================================
-# CONFIG_USE_APK is not set
-CONFIG_PACKAGE_opkg=y
-CONFIG_PACKAGE_libopkg=y
-CONFIG_PACKAGE_luci-app-opkg=y
-
-# ==========================================
-# 3. 引导加载程序 (MT5000 启动必需)
+# 引导加载程序 (MT5000 启动必需)
 # ==========================================
 CONFIG_PACKAGE_trusted-firmware-a-mt7981-ram-ddr3=y
 CONFIG_PACKAGE_trusted-firmware-a-mt7981-ram-ddr4=y
@@ -22,7 +14,7 @@ CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_mt7981-wo-firmware=y
 
 # ==========================================
-# 4. 存储与分区优化 (针对 8GB EMMC)
+# 存储与分区优化 (针对 8GB EMMC)
 # ==========================================
 CONFIG_TARGET_KERNEL_PARTSIZE=64
 CONFIG_TARGET_ROOTFS_PARTSIZE=0
@@ -41,7 +33,7 @@ CONFIG_PACKAGE_kmod-mmc=y
 CONFIG_PACKAGE_kmod-sdhci=y
 
 # ==========================================
-# 5. 网络与性能增强 (包含 BBR)
+# 网络与性能增强 (包含 BBR)
 # ==========================================
 CONFIG_PACKAGE_firewall4=y
 CONFIG_PACKAGE_dnsmasq-full=y
@@ -54,7 +46,7 @@ CONFIG_PACKAGE_wget-ssl=y
 CONFIG_PACKAGE_ds-lite=y
 
 # ==========================================
-# 6. Web 管理界面 (LuCI) 与 主题
+# Web 管理界面 (LuCI) 与 主题
 # ==========================================
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-base=y
@@ -64,7 +56,7 @@ CONFIG_PACKAGE_luci-theme-argon=y
 CONFIG_PACKAGE_luci-app-argon-config=y
 
 # ==========================================
-# 7. 实用插件 (整合两个列表的所有插件)
+# 实用插件
 # ==========================================
 CONFIG_PACKAGE_luci-app-advancedplus=y
 CONFIG_PACKAGE_luci-app-fan=y
@@ -80,7 +72,7 @@ CONFIG_PACKAGE_luci-app-ddns=y
 CONFIG_PACKAGE_luci-app-netdata=y
 
 # ==========================================
-# 8. 底层系统工具与硬件管理
+# 底层系统工具与硬件管理
 # ==========================================
 CONFIG_CCACHE=y
 CONFIG_PACKAGE_autocore=y
