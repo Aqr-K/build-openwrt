@@ -7,7 +7,7 @@ on:
     inputs:
       config_version:
         description: "选择配置目录"
-        required: false
+        required: true
         default: "aqr-k-MT5000-24.10"
         type: choice
         options:
