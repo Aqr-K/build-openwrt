@@ -75,22 +75,35 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 缓存下载目录 (dl)
-      uses: actions/cache@v4
+    # ==================== 恢复缓存阶段 ====================
+    - name: 恢复下载目录 (dl)
+      uses: actions/cache/restore@v4
       with:
-        path: openwrt/dl
+        path: /workdir/openwrt/dl
         key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
         restore-keys: |
           ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
 
-    - name: 缓存编译器缓存 (ccache)
-      uses: actions/cache@v4
+    - name: 恢复编译器缓存 (ccache)
+      uses: actions/cache/restore@v4
       with:
         path: /home/runner/.ccache
         key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
         restore-keys: |
           ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
+    - name: 恢复工具链与主机工具 (提速核心)
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          /workdir/openwrt/staging_dir/toolchain-*
+          /workdir/openwrt/staging_dir/host
+        key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ hashFiles('**/toolchain/gcc/Makefile') }}
+        restore-keys: |
+          ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-
+    # ======================================================
+
+    # ==================== 进入构建阶段 ====================
     - name: 加载自定义 Feeds & 执行 DIY 脚本 (Part 1)
       run: |
         [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
@@ -153,7 +166,7 @@ jobs:
         CCACHE_COMPRESSLEVEL: "6"
       run: |
         cd openwrt
-        ccache -M 5G
+        ccache -M 2G
         ccache -z # 清除之前的统计，以便观察本次编译
         echo -e "$(nproc) 线程编译中..."
         make -j$(nproc) || make -j1 || make -j1 V=s
@@ -161,6 +174,33 @@ jobs:
         ccache -s
         echo "===================================================="
         echo "status=success" >> $GITHUB_OUTPUT
+    # ======================================================
+
+    # ==================== 保存缓存阶段 ====================
+    - name: 总是保存下载目录 (dl)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: /workdir/openwrt/dl
+        key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
+
+    - name: 总是保存编译器缓存 (ccache)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: /home/runner/.ccache
+        # 每次保存使用含 ID 的 Key，确保能存入
+        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: 总是保存工具链产物 (无论是否成功)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: |
+          /workdir/openwrt/staging_dir/toolchain-*
+          /workdir/openwrt/staging_dir/host
+        key: ${{ runner.os }}-toolchain-${{ env.REPO_BRANCH }}-${{ github.run_id }}
+    # ================================================================
 
     - name: 整理输出文件
       id: organize
@@ -208,13 +248,3 @@ jobs:
       with:
         retain_days: 1
         keep_minimum_runs: 3
-        
-    - name: 总是保存编译器缓存 (ccache)
-      uses: actions/cache/save@v4
-      if: github.event.inputs.debug == 'false' && always()
-      with:
-        path: /home/runner/.ccache
-        # 注意：Key 必须是唯一的，如果这次编译产生新缓存，Key 不能和 Restore 的完全一样（除非你删除了旧缓存）
-        # 建议在 Key 里带上 run_id 或 run_attempt
-        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
-        token: ${{ secrets.GITHUB_TOKEN }}
