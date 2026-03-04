@@ -31,7 +31,7 @@ on:
         default: false
 
       debug:
-        description: '不编译内容，只生成 config'
+        description: '不编译，只查看最终 .config'
         required: false
         type: boolean
         default: false
