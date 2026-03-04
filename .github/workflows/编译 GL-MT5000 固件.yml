@@ -86,7 +86,7 @@ jobs:
     - name: 缓存编译器缓存 (ccache)
       uses: actions/cache@v4
       with:
-        path: ~/.ccache
+        path: /home/runner/.ccache
         key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
         restore-keys: |
           ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
@@ -110,6 +110,7 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        sed -i 's/CONFIG_CCACHE=y/CONFIG_CCACHE=y/' .config || echo "CONFIG_CCACHE=y" >> .config
         make defconfig
         
     - name: 打印最终有效 .config 配置
@@ -144,23 +145,27 @@ jobs:
     - name: 执行固件编译
       id: compile
       if: (github.event.inputs.debug == 'false')
+      env:
+        # 让 ccache 忽略路径差异，大幅提升命中率
+        CCACHE_DIR: /home/runner/.ccache
+        CCACHE_BASEDIR: /workdir/openwrt
+        CCACHE_COMPRESS: "true"
+        CCACHE_COMPRESSLEVEL: "6"
       run: |
         cd openwrt
         ccache -M 5G
+        ccache -z # 清除之前的统计，以便观察本次编译
         echo -e "$(nproc) 线程编译中..."
         make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "================== CCACHE 统计信息 =================="
+        ccache -s
+        echo "===================================================="
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 整理输出文件
       id: organize
       if: steps.compile.outputs.status == 'success' && !cancelled()
-      run: |
-        # # 优先级：.config里的定义 > include/version.mk > 默认为 SNAPSHOT
-        # VERSION_V=$(grep "CONFIG_VERSION_NUMBER=" openwrt/.config | cut -d'=' -f2 | sed 's/"//g')
-        # [ -z "$VERSION_V" ] && VERSION_V=$(grep "VERSION_NUMBER:=" openwrt/include/version.mk | cut -d'=' -f2)
-        # [ -z "$VERSION_V" ] && VERSION_V="SNAPSHOT"
-        # echo "OWRT_VERSION=$VERSION_V" >> $GITHUB_OUTPUT
-        
+      run: |    
         mkdir -p $GITHUB_WORKSPACE/output
         cd openwrt/bin/targets/mediatek/filogic/
         cp -f *.bin $GITHUB_WORKSPACE/output/ || true
@@ -172,7 +177,6 @@ jobs:
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        # name: OpenWrt_MT5000_${{ steps.organize.outputs.OWRT_VERSION }}_固件
         name: OpenWrt_${{ github.event.inputs.source_branch }}
         path: ${{ steps.organize.outputs.FIRMWARE_PATH }}
         retention-days: 7
