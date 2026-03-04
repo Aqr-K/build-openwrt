@@ -8,10 +8,10 @@ on:
       config_version:
         description: "选择配置目录"
         required: false
-        default: "aqr-k-MT5000"
+        default: "aqr-k-MT5000-24.10"
         type: choice
         options:
-          - aqr-k-MT5000
+          - aqr-k-MT5000-24.10
           - aqr-k-MT5000-25.12
 
       source_branch:
