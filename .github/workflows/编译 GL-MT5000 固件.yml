@@ -1,4 +1,5 @@
 name: 编译 GL-MT5000 固件
+run-name: ${{ github.event.inputs.debug == 'true' && '🛠️ 测试配置 (仅生成 Config)' || '🚀 正式编译' }} - ${{ github.event.inputs.source_branch }} - ${{ github.event.inputs.config_version }}
 
 on:
   repository_dispatch:
@@ -11,6 +12,7 @@ on:
         type: choice
         options:
           - aqr-k-MT5000
+          - aqr-k-MT5000-25.12
 
       source_branch:
         description: "选择源码分支 (决定 OpenWrt 内核/组件版本)"
@@ -73,20 +75,6 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 显示 OpenWrt 版本信息
-      run: |
-        cd openwrt
-        echo "==============================="
-        echo "当前源码版本信息："
-        if [ -f include/version.mk ]; then
-          grep "VERSION_NUMBER:=" include/version.mk | sed 's/VERSION_NUMBER:=/版本号: /'
-          grep "VERSION_DIST:=" include/version.mk | sed 's/VERSION_DIST:=/固件名: /'
-        fi
-        if [ -f package/base-files/files/etc/openwrt_release ]; then
-          cat package/base-files/files/etc/openwrt_release
-        fi
-        echo "==============================="
-
     - name: 缓存下载目录 (dl)
       uses: actions/cache@v4
       with:
@@ -116,63 +104,12 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 加载自定义配置 & 注入预装包 (Part 2)
+    - name: 加载自定义配置 (Part 2)
       run: |
-        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
-        
-        cat >> openwrt/.config <<EOF
-        CONFIG_TARGET_mediatek=y
-        CONFIG_TARGET_mediatek_filogic=y
-        CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y
-        
-        # CONFIG_USE_APK is not set
-        CONFIG_PACKAGE_opkg=y
-        CONFIG_PACKAGE_libopkg=y
-        CONFIG_PACKAGE_luci-app-opkg=y
-
-        CONFIG_CCACHE=y
-        CONFIG_PACKAGE_autocore=y
-        CONFIG_PACKAGE_bash=y
-        CONFIG_PACKAGE_block-mount=y
-        CONFIG_PACKAGE_ca-bundle=y
-        CONFIG_PACKAGE_coremark=y
-        CONFIG_PACKAGE_curl=y
-        CONFIG_PACKAGE_dnsmasq-full=y
-        CONFIG_PACKAGE_ds-lite=y
-        CONFIG_PACKAGE_e2fsprogs=y
-        CONFIG_PACKAGE_fdisk=y
-        CONFIG_PACKAGE_firewall4=y
-        CONFIG_PACKAGE_fstools=y
-        CONFIG_PACKAGE_htop=y
-        CONFIG_PACKAGE_kmod-button-hotplug=y
-        CONFIG_PACKAGE_kmod-fs-f2fs=y
-        CONFIG_PACKAGE_kmod-fs-vfat=y
-        CONFIG_PACKAGE_kmod-lib-zstd=y
-        CONFIG_PACKAGE_kmod-mmc=y
-        CONFIG_PACKAGE_kmod-sdhci=y
-        CONFIG_PACKAGE_kmod-tcp-bbr=y
-        CONFIG_PACKAGE_kmod-usb-hid=y
-        CONFIG_PACKAGE_luci-app-advancedplus=y
-        CONFIG_PACKAGE_luci-app-fan=y
-        CONFIG_PACKAGE_luci-app-filemanager=y
-        CONFIG_PACKAGE_luci-app-firewall=y
-        CONFIG_PACKAGE_luci-app-opkg=y
-        CONFIG_PACKAGE_luci-app-syscontrol=y
-        CONFIG_PACKAGE_luci-app-upnp=y
-        CONFIG_PACKAGE_luci-app-wizard=y
-        CONFIG_PACKAGE_luci-proto-wireguard=y
-        CONFIG_PACKAGE_mkf2fs=y
-        CONFIG_PACKAGE_pciutils=y
-        CONFIG_PACKAGE_usbutils=y
-        CONFIG_PACKAGE_wget-ssl=y
-        CONFIG_PACKAGE_zram-swap=y
-        EOF
-        
+        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config 
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        
-        # 此时 make defconfig 会根据上面的设置，将系统锁定在 ipk 模式
         make defconfig
         
     - name: 打印最终有效 .config 配置
@@ -190,6 +127,7 @@ jobs:
         limit-access-to-actor: true
 
     - name: 上传调试用 .config 文件
+      if: (github.event.inputs.debug == 'false')
       uses: actions/upload-artifact@v4
       with:
         name: config-debug-${{ github.event.inputs.source_branch }}
