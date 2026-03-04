@@ -76,21 +76,21 @@ jobs:
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     # ==================== 恢复缓存阶段 ====================
-    # - name: 恢复下载目录 (dl)
-    #   uses: actions/cache/restore@v4
-    #   with:
-    #     path: /workdir/openwrt/dl
-    #     key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
-    #     restore-keys: |
-    #       ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
+    - name: 恢复下载目录 (dl)
+       uses: actions/cache/restore@v4
+      with:
+        path: /workdir/openwrt/dl
+        key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
 
-    # - name: 恢复编译器缓存 (ccache)
-    #   uses: actions/cache/restore@v4
-    #   with:
-    #     path: /home/runner/.ccache
-    #     key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
-    #     restore-keys: |
-    #       ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
+    - name: 恢复编译器缓存 (ccache)
+      uses: actions/cache/restore@v4
+      with:
+        path: /home/runner/.ccache
+        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-
 
     # ======================================================
 
@@ -159,6 +159,8 @@ jobs:
         cd openwrt
         ccache -M 2G
         ccache -z # 清除之前的统计，以便观察本次编译
+        # 先将编译流程排个序
+        make -j1 prepare
         echo -e "$(nproc) 线程编译中..."
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "================== CCACHE 统计信息 =================="
@@ -168,20 +170,20 @@ jobs:
     # ======================================================
 
     # ==================== 保存缓存阶段 ====================
-    # - name: 总是保存下载目录 (dl)
-    #   uses: actions/cache/save@v4
-    #   if: github.event.inputs.debug == 'false' && always()
-    #   with:
-    #     path: /workdir/openwrt/dl
-    #     key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
+    - name: 总是保存下载目录 (dl)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: /workdir/openwrt/dl
+        key: ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('**/Makefile') }}
 
-    # - name: 总是保存编译器缓存 (ccache)
-    #   uses: actions/cache/save@v4
-    #   if: github.event.inputs.debug == 'false' && always()
-    #   with:
-    #     path: /home/runner/.ccache
-    #     # 每次保存使用含 ID 的 Key，确保能存入
-    #     key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
+    - name: 总是保存编译器缓存 (ccache)
+      uses: actions/cache/save@v4
+      if: github.event.inputs.debug == 'false' && always()
+      with:
+        path: /home/runner/.ccache
+        # 每次保存使用含 ID 的 Key，确保能存入
+        key: ${{ runner.os }}-openwrt-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     # ================================================================
 
