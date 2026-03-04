@@ -155,7 +155,7 @@ jobs:
       run: |
         cd openwrt
         echo "正在初始化编译树目录结构..."
-        make -j1 prepare
+        make -j1 prepare V=s
 
     - name: 阶段 1 - 编译宿主机工具 (Tools)
       if: steps.cache-toolchain.outputs.cache-hit != 'true' && github.event.inputs.debug == 'false'
