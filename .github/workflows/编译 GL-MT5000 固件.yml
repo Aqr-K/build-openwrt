@@ -134,12 +134,13 @@ jobs:
       - name: 配置一致性 终审
         if: github.event.inputs.debug == 'false'
         run: |
-          # 逻辑：如果之前成功了，或用户在 SSH 里手动编译通过了，则通过
-          cd /workdir/openwrt
           if [ "${{ steps.checkconfig.outcome }}" == "success" ] || [ -f /tmp/fixed_config ]; then
-            echo "配置一致性检查 通过"
+            echo "✅ 配置一致性检查通过"
           else
-            echo "配置一致性检查 失败且未修复。提示：进入 SSH 修复后执行 'touch /tmp/fixed_config' 并退出即可跳过此报错。"
+            echo "❌ 配置检查失败。排查建议："
+            echo "1. 检查 feeds.conf 是否漏掉了对应的仓库"
+            echo "2. 进入 SSH 手动执行 'make menuconfig' 查找该包，看底层依赖什么"
+            echo "3. 修复后在 SSH 中执行 'touch /tmp/fixed_config' 并退出即可跳过此报错"
             exit 1
           fi
 
