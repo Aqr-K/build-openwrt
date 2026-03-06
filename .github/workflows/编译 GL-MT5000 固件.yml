@@ -8,7 +8,7 @@ on:
       config_version:
         description: "选择配置目录"
         required: true
-        default: "aqr-k-MT5000-24.10"
+        default: "aqr-k-MT5000-25.12"
         type: choice
         options:
           - aqr-k-MT5000-24.10
@@ -17,7 +17,7 @@ on:
       source_branch:
         description: "选择源码分支 (决定 OpenWrt 内核/组件版本)"
         required: true
-        default: "MT5000-24.10"
+        default: "MT5000-25.12"
         type: choice
         options:
           - MT5000-main
@@ -49,7 +49,7 @@ env:
 
 jobs:
   build:
-    name: ${{ github.event.inputs.debug == 'true' && '🛠️ 测试配置 (仅生成 Config)' || '🚀 正式编译' }} - ${{ github.event.inputs.source_branch }} - ${{ github.event.inputs.config_version }}
+    name: ${{ github.event.inputs.debug == 'true' && '🛠️ 测试配置 (仅生成 Config)' || '🚀 正式编译' }}
     runs-on: ubuntu-22.04
 
     steps:
@@ -345,21 +345,21 @@ jobs:
       # ==================== 保存缓存阶段 ====================
       - name: 保存 DL 缓存
         uses: actions/cache/save@v4
-        if: success() && !cancelled()
+        if: success() && !cancelled() && github.event.inputs.debug == 'false'
         with:
           path: /workdir/openwrt/dl
           key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ github.run_id }}
 
       - name: 保存 Ccache 缓存
         uses: actions/cache/save@v4
-        if: success() && !cancelled()
+        if: success() && !cancelled() && github.event.inputs.debug == 'false'
         with:
           path: /home/runner/.ccache
           key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
 
       - name: 保存 Tools 缓存
         uses: actions/cache/save@v4
-        if: steps.cache-tools.outputs.cache-hit != 'true' && success()
+        if: steps.cache-tools.outputs.cache-hit != 'true' && success() && github.event.inputs.debug == 'false' && !cancelled()
         with:
           path: |
             /workdir/openwrt/staging_dir/host
@@ -368,7 +368,7 @@ jobs:
 
       - name: 保存 Toolchain 缓存
         uses: actions/cache/save@v4
-        if: steps.cache-toolchain.outputs.cache-hit != 'true' && success()
+        if: steps.cache-toolchain.outputs.cache-hit != 'true' && success() && github.event.inputs.debug == 'false' && !cancelled()
         with:
           path: |
             /workdir/openwrt/staging_dir/toolchain-*
