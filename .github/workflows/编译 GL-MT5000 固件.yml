@@ -95,7 +95,6 @@ jobs:
           make defconfig
 
       - name: 输出最终 .config (Debug 模式)
-        if: github.event.inputs.debug == 'true'
         run: |
           cd openwrt
           echo "========== 最终 .config (make defconfig 后) =========="
