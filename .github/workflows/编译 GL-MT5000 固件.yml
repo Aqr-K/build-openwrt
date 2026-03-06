@@ -49,7 +49,7 @@ env:
 
 jobs:
   build:
-    name: 开始编译固件
+    name: ${{ github.event.inputs.debug == 'true' && '🛠️ 测试配置 (仅生成 Config)' || '🚀 正式编译' }} - ${{ github.event.inputs.source_branch }} - ${{ github.event.inputs.config_version }}
     runs-on: ubuntu-22.04
 
     steps:
@@ -94,6 +94,55 @@ jobs:
           grep -q '^CONFIG_CCACHE=y' .config || echo 'CONFIG_CCACHE=y' >> .config
           make defconfig
 
+      - name: 检查配置一致性 (Dependency Check)
+        id: checkconfig
+        continue-on-error: true
+        run: |
+          cd openwrt
+          echo "========== 自定义配置一致性检查 =========="
+          # 1. 提取原始配置中用户想要激活的项（包含 =y, =m, 以及字符串/数字配置）
+          # 排除注释行和“is not set”行
+          grep '^CONFIG_' $GITHUB_WORKSPACE/$CONFIG_FILE | grep -v 'is not set' | sort > /tmp/my_configs.txt
+          
+          MISSING_COUNT=0
+          # 2. 逐行比对最终的 .config
+          while read -r line; do
+            # 使用 -x (精确行匹配) 和 -F (固定字符串)
+            if ! grep -qFx "$line" .config; then
+              echo "❌ [丢失]: $line"
+              MISSING_COUNT=$((MISSING_COUNT + 1))
+            fi
+          done < /tmp/my_configs.txt
+
+          if [ $MISSING_COUNT -eq 0 ]; then
+            echo "✅ 恭喜！所有自定义配置均已成功保留。"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "----------------------------------------"
+            echo "⚠️  注意：以上 $MISSING_COUNT 项配置在最终生成的配置中消失了！"
+            echo "常见原因：1. 包名拼写错误 2. 缺少上游依赖库 3. 内核版本不匹配"
+            echo "----------------------------------------"
+            exit 1
+          fi
+
+      - name: SSH 调试配置一致性检查阶段 (仅失败触发)
+        if: steps.checkconfig.outcome == 'failure' && github.event.inputs.ssh == 'true'
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+
+      - name: 配置一致性 终审
+        if: github.event.inputs.debug == 'false'
+        run: |
+          # 逻辑：如果之前成功了，或用户在 SSH 里手动编译通过了，则通过
+          cd /workdir/openwrt
+          if [ "${{ steps.checkconfig.outcome }}" == "success" ] || [ -f /tmp/fixed_config ]; then
+            echo "配置一致性检查 通过"
+          else
+            echo "配置一致性检查 失败且未修复。提示：进入 SSH 修复后执行 'touch /tmp/fixed_config' 并退出即可跳过此报错。"
+            exit 1
+          fi
+
       - name: 输出最终 .config (Debug 模式)
         run: |
           cd openwrt
@@ -120,6 +169,7 @@ jobs:
       # ==================== 恢复缓存阶段 ====================
       - name: 提取并生成缓存指纹信息
         id: fingerprint
+        if: github.event.inputs.debug == 'false'
         run: |
           # 提取独立指纹
           echo "TOOLS_HASH=$(sha256sum include/tools.mk | awk '{print $1}')" >> $GITHUB_OUTPUT
@@ -128,6 +178,7 @@ jobs:
 
       - name: 恢复 DL 缓存
         uses: actions/cache/restore@v4
+        if: github.event.inputs.debug == 'false'
         with:
           path: /workdir/openwrt/dl
           key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ github.run_id }}
@@ -135,6 +186,7 @@ jobs:
 
       - name: 恢复 Ccache 缓存
         uses: actions/cache/restore@v4
+        if: github.event.inputs.debug == 'false'
         with:
           path: /home/runner/.ccache
           key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ github.run_id }}
@@ -143,6 +195,7 @@ jobs:
       - name: 恢复 Tools 缓存
         id: cache-tools
         uses: actions/cache/restore@v4
+        if: github.event.inputs.debug == 'false'
         with:
           path: |
             /workdir/openwrt/staging_dir/host
@@ -152,6 +205,7 @@ jobs:
       - name: 恢复 Toolchain 缓存
         id: cache-toolchain
         uses: actions/cache/restore@v4
+        if: github.event.inputs.debug == 'false'
         with:
           path: |
             /workdir/openwrt/staging_dir/toolchain-*
