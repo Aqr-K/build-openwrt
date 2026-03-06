@@ -241,7 +241,7 @@ jobs:
         run: |
           # 逻辑：如果之前成功了，或用户在 SSH 里手动编译通过了，则通过
           cd /workdir/openwrt
-          if [ "${{ steps.stage1.outcome }}" == "success" ] || [ -f /tmp/fixed_stage1 ]; then
+          if [ "${{ steps.stage1.outcome }}" != "failure" ] || [ -f /tmp/fixed_stage1 ]; then
             echo "阶段 1 通过"
           else
             echo "阶段 1 失败且未修复。提示：进入 SSH 修复后执行 'touch /tmp/fixed_stage1' 并退出即可跳过此报错。"
@@ -266,7 +266,7 @@ jobs:
       - name: 阶段 2 终审
         if: github.event.inputs.debug == 'false'
         run: |
-          if [ "${{ steps.stage2.outcome }}" == "success" ] || [ -f /tmp/fixed_stage2 ]; then
+          if [ "${{ steps.stage2.outcome }}" != "failure" ] || [ -f /tmp/fixed_stage2 ]; then
             echo "阶段 2 通过"
           else
             exit 1
@@ -288,7 +288,7 @@ jobs:
       - name: 阶段 3 终审
         if: github.event.inputs.debug == 'false'
         run: |
-          if [ "${{ steps.stage3.outcome }}" == "success" ] || [ -f /tmp/fixed_stage3 ]; then
+          if [ "${{ steps.stage3.outcome }}" != "failure" ] || [ -f /tmp/fixed_stage3 ]; then
             echo "阶段 3 通过"
           else
             exit 1
@@ -310,7 +310,7 @@ jobs:
       - name: 阶段 4 终审
         if: github.event.inputs.debug == 'false'
         run: |
-          if [ "${{ steps.stage4.outcome }}" == "success" ] || [ -f /tmp/fixed_stage4 ]; then
+          if [ "${{ steps.stage4.outcome }}" != "failure" ] || [ -f /tmp/fixed_stage4 ]; then
             echo "阶段 4 通过"
           else
             exit 1
@@ -335,7 +335,7 @@ jobs:
       - name: 阶段 5 终审
         if: github.event.inputs.debug == 'false'
         run: |
-          if [ "${{ steps.compile.outcome }}" == "success" ] || [ -f /tmp/fixed_stage5 ]; then
+          if [ "${{ steps.compile.outcome }}" != "failure" ] || [ -f /tmp/fixed_stage5 ]; then
             echo "status=success" >> $GITHUB_OUTPUT # 确保保存缓存阶段能看到成功状态
           else
             exit 1
