@@ -220,6 +220,13 @@ jobs:
           echo "CCACHE_BASEDIR=/workdir/openwrt" >> $GITHUB_ENV
           ccache -M 2G
           ccache -z
+          
+          TARGET_PATH="/workdir/openwrt/staging_dir/host/bin/ccache"
+          if [ ! -f "$TARGET_PATH" ]; then
+            echo "⚠️ 检测到初次编译，手动建立临时链接以防报错..."
+            mkdir -p "$(dirname "$TARGET_PATH")"
+            ln -sf /usr/bin/ccache "$TARGET_PATH"
+          fi
 
       # ------------------ 阶段 1: Tools ------------------
       - name: 阶段 1 - 编译宿主机工具 (Tools)
